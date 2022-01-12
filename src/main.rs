@@ -47,8 +47,8 @@ fn main() -> Result<()> {
                 .join("\n");
 
         let challenge_pages = challenges.into_iter().map(|((cmeta, name), content)| {
-            let chal_front_matter = format!(
-                "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n",
+            ((cmeta, name), format!(
+                "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n\n\n{}",
                 &cmeta.name,
                 &meta.date,
                 cmeta
@@ -58,10 +58,10 @@ fn main() -> Result<()> {
                     .into_iter()
                     .map(|x| format!("{:?}", x))
                     .collect::<Vec<_>>()
-                    .join(",")
-            );
-            ((cmeta, name), chal_front_matter + "\n\n" + &content)
-        }).collect::<Vec<_>>();
+                    .join(","),
+                content
+            ))
+        });
         let section_path = {
             let mut section_path = PathBuf::new();
             section_path.push(output_folder);
@@ -81,7 +81,7 @@ fn main() -> Result<()> {
                 chal_path.push(format!("{}.md", name));
                 chal_path
             };
-            std::fs::write(chal_path, content);
+            std::fs::write(chal_path, content)?;
         }
     }
     Ok(())
