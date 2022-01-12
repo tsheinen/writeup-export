@@ -56,7 +56,7 @@ fn main() -> Result<()> {
                     .as_ref()
                     .unwrap_or(&vec![])
                     .into_iter()
-                    .map(|x| format!("\"{}\"", x))
+                    .map(|x| format!("{:?}", x))
                     .collect::<Vec<_>>()
                     .join(",")
             );
