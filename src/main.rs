@@ -3,14 +3,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::format;
 use std::path::PathBuf;
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+struct Opt {
+    #[structopt(short = "i", default_value="in")]
+    input_folder: String,
+    #[structopt(short = "o", default_value="out")]
+    output_folder: String
+}
 
 fn main() -> Result<()> {
-    let input_folder = "in";
-    let output_folder = "out";
+    let opt = Opt::from_args();
 
-    for folder in std::fs::read_dir(input_folder)?
+    for folder in std::fs::read_dir(&opt.input_folder)?
         .flatten()
         .filter(|x| x.file_type().unwrap().is_dir())
+        .filter(|x| !x.file_name().to_string_lossy().contains(".git"))
     {
         let meta_path = {
             let mut folder_path = folder.path();
@@ -36,7 +45,7 @@ fn main() -> Result<()> {
             "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [\"ctf-writeups\"]\n+++\n",
             &meta.name, &meta.date
         );
-        let description = meta.description.map(|desc| desc + "\n<!-- more -->");
+        let description = meta.description.map(|desc| desc + "\n<!-- more -->\n");
 
         let section_page = front_matter
             + &description.unwrap_or(String::new())
@@ -64,7 +73,7 @@ fn main() -> Result<()> {
         });
         let section_path = {
             let mut section_path = PathBuf::new();
-            section_path.push(output_folder);
+            section_path.push(&opt.output_folder);
             section_path.push(folder.file_name().to_string_lossy().to_string());
             section_path
         };
