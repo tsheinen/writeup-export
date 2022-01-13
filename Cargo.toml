@@ -10,3 +10,4 @@ serde = { version = "1", features = ["derive"]}
 toml = "0.5"
 color-eyre = "0.5"
 structopt = "0.3"
+walkdir = "2"

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::format;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use walkdir::WalkDir;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -86,13 +87,37 @@ fn main() -> Result<()> {
             index_path
         };
         std::fs::write(index_path, section_page)?;
-        for ((cmeta, name), content) in challenge_pages {
+        for ((_, name), content) in challenge_pages {
             let chal_path = {
                 let mut chal_path = section_path.clone();
                 chal_path.push(format!("{}.md", name));
                 chal_path
             };
             std::fs::write(chal_path, content)?;
+        }
+
+
+        let mut assets: Vec<PathBuf> = vec![];
+        let mut builder = WalkDir::new(folder.path());
+
+        for entry in builder.into_iter().filter_map(std::result::Result::ok) {
+            let entry_path = entry.path();
+            if entry_path.is_file() && entry_path.file_name().unwrap() != "meta.toml" {
+                match entry_path.extension() {
+                    Some(e) => match e.to_str() {
+                        Some("md") => continue,
+                        _ => assets.push(entry_path.to_path_buf()),
+                    },
+                    None => assets.push(entry_path.to_path_buf()),
+                }
+            }
+        }
+        for asset in assets {
+            let relative_path = asset.strip_prefix(folder.path()).unwrap();
+            let mut output_path = section_path.clone();
+            output_path.push(relative_path);
+            std::fs::create_dir_all(output_path.parent().unwrap())?;
+            std::fs::copy(asset, output_path)?;
         }
     }
     Ok(())
