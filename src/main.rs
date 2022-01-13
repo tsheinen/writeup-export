@@ -50,10 +50,9 @@ fn main() -> Result<()> {
             + &description.unwrap_or(String::new())
             + &challenges
                 .iter()
-                .map(|((cmeta, _), b)| format!("# {}\n{}", cmeta.name, b))
+                .map(|((cmeta, _), b)| format!("# {}\n{}", cmeta.name, b.replace("\n#", "\n##")))
                 .collect::<Vec<_>>()
-                .join("\n")
-                .replace("\n#", "\n##");
+                .join("\n");
 
         let challenge_pages = challenges.into_iter().map(|((cmeta, name), content)| {
             (
