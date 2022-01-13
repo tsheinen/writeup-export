@@ -7,10 +7,10 @@ use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
-    #[structopt(short = "i", default_value="in")]
+    #[structopt(short = "i", default_value = "in")]
     input_folder: String,
-    #[structopt(short = "o", default_value="out")]
-    output_folder: String
+    #[structopt(short = "o", default_value = "out")]
+    output_folder: String,
 }
 
 fn main() -> Result<()> {
@@ -26,7 +26,6 @@ fn main() -> Result<()> {
             folder_path.push("meta.toml");
             folder_path
         };
-
 
         let meta: CTFMeta = toml::from_str(&std::fs::read_to_string(meta_path)?)?;
         let challenges = meta
@@ -51,25 +50,29 @@ fn main() -> Result<()> {
             + &description.unwrap_or(String::new())
             + &challenges
                 .iter()
-                .map(|(_, b)| b.clone())
+                .map(|((cmeta, _), b)| format!("# {}\n{}", cmeta.name, b))
                 .collect::<Vec<_>>()
-                .join("\n");
+                .join("\n")
+                .replace("\n#", "\n##");
 
         let challenge_pages = challenges.into_iter().map(|((cmeta, name), content)| {
-            ((cmeta, name), format!(
-                "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n\n\n{}",
-                &cmeta.name,
-                &meta.date,
-                cmeta
-                    .tags
-                    .as_ref()
-                    .unwrap_or(&vec![])
-                    .into_iter()
-                    .map(|x| format!("{:?}", x))
-                    .collect::<Vec<_>>()
-                    .join(","),
-                content
-            ))
+            (
+                (cmeta, name),
+                format!(
+                    "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n\n\n{}",
+                    &cmeta.name,
+                    &meta.date,
+                    cmeta
+                        .tags
+                        .as_ref()
+                        .unwrap_or(&vec![])
+                        .into_iter()
+                        .map(|x| format!("{:?}", x))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    content
+                ),
+            )
         });
         let section_path = {
             let mut section_path = PathBuf::new();
