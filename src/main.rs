@@ -3,8 +3,27 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::format;
 use std::path::PathBuf;
+use std::str::FromStr;
 use structopt::StructOpt;
 use walkdir::WalkDir;
+
+#[derive(Debug, Clone, Copy)]
+enum OutputType {
+    Zola,
+    Hugo,
+}
+
+impl FromStr for OutputType {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "zola" => Ok(OutputType::Zola),
+            "hugo" => Ok(OutputType::Hugo),
+            _ => Err("type should be \"zola\" or \"hugo\""),
+        }
+    }
+}
 
 #[derive(Debug, StructOpt)]
 struct Opt {
@@ -12,6 +31,30 @@ struct Opt {
     input_folder: String,
     #[structopt(short = "o", default_value = "out")]
     output_folder: String,
+    #[structopt(short = "t", default_value = "zola")]
+    r#type: OutputType,
+}
+
+fn make_front_matter(
+    name: impl AsRef<str>,
+    date: impl AsRef<str>,
+    tags: &[String],
+    output_type: OutputType,
+) -> String {
+    match output_type {
+        OutputType::Zola => format!(
+            "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n\n\n",
+            name.as_ref(),
+            date.as_ref(),
+            tags
+                .into_iter()
+                .map(|x| format!("{:?}", x))
+                .collect::<Vec<_>>()
+                .join(","),
+
+        ),
+        OutputType::Hugo => unimplemented!(),
+    }
 }
 
 fn main() -> Result<()> {
@@ -41,10 +84,7 @@ fn main() -> Result<()> {
             .flat_map(|(a, b)| Some((a, std::fs::read_to_string(b).ok()?)))
             .collect::<Vec<_>>();
 
-        let front_matter = format!(
-            "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [\"ctf-writeups\"]\n+++\n",
-            &meta.name, &meta.date
-        );
+        let front_matter = make_front_matter(&meta.name, &meta.date, &vec!["ctf-writeups".to_string()], opt.r#type);
         let description = meta.description.map(|desc| desc + "\n<!-- more -->\n");
 
         let section_page = front_matter
@@ -59,17 +99,8 @@ fn main() -> Result<()> {
             (
                 (cmeta, name),
                 format!(
-                    "+++\ntitle=\"{}\"\ndate = {}\n\n[taxonomies]\ntags = [{}]\n+++\n\n\n{}",
-                    &cmeta.name,
-                    &meta.date,
-                    cmeta
-                        .tags
-                        .as_ref()
-                        .unwrap_or(&vec![])
-                        .into_iter()
-                        .map(|x| format!("{:?}", x))
-                        .collect::<Vec<_>>()
-                        .join(","),
+                    "{}{}",
+                    make_front_matter(&cmeta.name, &meta.date, &cmeta.tags.iter().flatten().cloned().collect::<Vec<_>>(), opt.r#type),
                     content
                 ),
             )
@@ -95,7 +126,6 @@ fn main() -> Result<()> {
             };
             std::fs::write(chal_path, content)?;
         }
-
 
         let mut assets: Vec<PathBuf> = vec![];
         let mut builder = WalkDir::new(folder.path());
