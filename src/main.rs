@@ -33,12 +33,15 @@ struct Opt {
     output_folder: String,
     #[structopt(short = "t", default_value = "zola")]
     r#type: OutputType,
+    #[structopt(short = "a")]
+    author: Vec<String>,
 }
 
 fn make_front_matter(
     name: impl AsRef<str>,
     date: impl AsRef<str>,
-    tags: &[String],
+    tags: &[impl AsRef<str>],
+    authors: &[impl AsRef<str>],
     output_type: OutputType,
 ) -> String {
     match output_type {
@@ -48,12 +51,26 @@ fn make_front_matter(
             date.as_ref(),
             tags
                 .into_iter()
-                .map(|x| format!("{:?}", x))
+                .map(|x| format!("{:?}", x.as_ref()))
                 .collect::<Vec<_>>()
                 .join(","),
 
         ),
-        OutputType::Hugo => unimplemented!(),
+        OutputType::Hugo => format!(
+            "+++\ntitle=\"{}\"\ndate = {}\ntags = [{}]\nauthors = [{}]\nlayout = \"post\"\n+++\n\n\n",
+            name.as_ref(),
+            date.as_ref(),
+            tags
+                .iter()
+                .map(|x| format!("{:?}", x.as_ref()))
+                .collect::<Vec<_>>()
+                .join(","),
+            authors
+                .iter()
+                .map(|x| format!("{:?}", x.as_ref()))
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
     }
 }
 
@@ -84,7 +101,13 @@ fn main() -> Result<()> {
             .flat_map(|(a, b)| Some((a, std::fs::read_to_string(b).ok()?)))
             .collect::<Vec<_>>();
 
-        let front_matter = make_front_matter(&meta.name, &meta.date, &vec!["ctf-writeups".to_string()], opt.r#type);
+        let front_matter = make_front_matter(
+            &meta.name,
+            &meta.date,
+            &vec!["ctf-writeups".to_string()],
+            &opt.author,
+            opt.r#type,
+        );
         let description = meta.description.map(|desc| desc + "\n<!-- more -->\n");
 
         let section_page = front_matter
@@ -100,7 +123,13 @@ fn main() -> Result<()> {
                 (cmeta, name),
                 format!(
                     "{}{}",
-                    make_front_matter(&cmeta.name, &meta.date, &cmeta.tags.iter().flatten().cloned().collect::<Vec<_>>(), opt.r#type),
+                    make_front_matter(
+                        &cmeta.name,
+                        &meta.date,
+                        &cmeta.tags.as_ref().unwrap_or(&vec![]),
+                        &opt.author,
+                        opt.r#type
+                    ),
                     content
                 ),
             )
