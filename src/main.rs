@@ -76,8 +76,21 @@ fn make_front_matter(
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
+    process_folder(
+        &opt.input_folder,
+        &opt.output_folder,
+        opt.r#type,
+        &opt.author,
+    )
+}
 
-    for folder in std::fs::read_dir(&opt.input_folder)?
+fn process_folder(
+    input_folder: &str,
+    output_folder: &str,
+    output_type: OutputType,
+    authors: &[impl AsRef<str>],
+) -> Result<()> {
+    for folder in std::fs::read_dir(input_folder)?
         .flatten()
         .filter(|x| x.file_type().unwrap().is_dir())
         .filter(|x| !x.file_name().to_string_lossy().contains(".git"))
@@ -105,8 +118,8 @@ fn main() -> Result<()> {
             &meta.name,
             &meta.date,
             &vec!["ctf-writeups".to_string()],
-            &opt.author,
-            opt.r#type,
+            &authors,
+            output_type,
         );
         let description = meta.description.map(|desc| desc + "\n<!-- more -->\n");
 
@@ -127,8 +140,8 @@ fn main() -> Result<()> {
                         &cmeta.name,
                         &meta.date,
                         &cmeta.tags.as_ref().unwrap_or(&vec![]),
-                        &opt.author,
-                        opt.r#type
+                        authors.as_ref(),
+                        output_type
                     ),
                     content
                 ),
@@ -136,7 +149,7 @@ fn main() -> Result<()> {
         });
         let section_path = {
             let mut section_path = PathBuf::new();
-            section_path.push(&opt.output_folder);
+            section_path.push(output_folder);
             section_path.push(folder.file_name().to_string_lossy().to_string());
             section_path
         };
@@ -198,19 +211,82 @@ pub struct ChallengeMeta {
 
 mod test {
     use super::*;
+    use temp_dir::TempDir;
 
     #[test]
-    fn parse_meta() {
-        let meta = "
-name = \"Test!\"
+    fn it_works() -> Result<()> {
+        let input_dir = TempDir::new()?;
+        let output_dir = TempDir::new()?;
+        let ctf_dir = {
+            let mut dir = input_dir.path().to_path_buf();
+            dir.push("ctf-test");
+            dir
+        };
+        let meta_dir = {
+            let mut dir = input_dir.path().to_path_buf();
+            dir.push("ctf-test/meta.toml");
+            dir
+        };
+        let md_dir = {
+            let mut dir = input_dir.path().to_path_buf();
+            dir.push("ctf-test/example.md");
+            dir
+        };
+        std::fs::create_dir_all(&ctf_dir)?;
+        std::fs::write(
+            &meta_dir,
+            "name = \"test lol\"
+date = \"2022-01-07\"
 
 [challenges]
-    [challenges.example]
-        name = \"Challenge 1\"
-";
+[challenges.example]
+name = \"example\"
+tags = [\"tag 1 lol\"]",
+        );
+        std::fs::write(&md_dir, "hi lol")?;
+        process_folder(
+            input_dir.path().as_os_str().to_string_lossy().as_ref(),
+            output_dir.path().as_os_str().to_string_lossy().as_ref(),
+            OutputType::Zola,
+            &vec!["sky"],
+        )?;
 
-        let meta: CTFMeta = toml::from_str(meta).unwrap();
-        println!("{:?}", meta);
-        assert!(false);
+
+        let ctf_example_output = {
+            let mut dir = output_dir.path().to_path_buf();
+            dir.push("ctf-test/example.md");
+            std::fs::read_to_string(dir).unwrap()
+        };
+
+        let ctf_index_output = {
+            let mut dir = output_dir.path().to_path_buf();
+            dir.push("ctf-test/index.md");
+            std::fs::read_to_string(dir).unwrap()
+        };
+        assert!(std::fs::read_dir(output_dir.path())?.filter_map(|x| x.ok()).any(|x| x.file_name() == "ctf-test" ));
+        assert_eq!(ctf_example_output, "+++
+title=\"example\"
+date = 2022-01-07
+
+[taxonomies]
+tags = [\"tag 1 lol\"]
++++
+
+
+hi lol");
+
+        assert_eq!(ctf_index_output, "+++
+title=\"test lol\"
+date = 2022-01-07
+
+[taxonomies]
+tags = [\"ctf-writeups\"]
++++
+
+
+# example
+hi lol");
+
+        Ok(())
     }
 }
