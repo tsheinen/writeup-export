@@ -169,21 +169,26 @@ fn process_folder(
             std::fs::write(chal_path, content)?;
         }
 
-        let mut assets: Vec<PathBuf> = vec![];
-        let mut builder = WalkDir::new(folder.path());
+        let mut assets: Vec<PathBuf> = {
+            let mut assets = vec![];
+            let mut builder = WalkDir::new(folder.path());
 
-        for entry in builder.into_iter().filter_map(std::result::Result::ok) {
-            let entry_path = entry.path();
-            if entry_path.is_file() && entry_path.file_name().unwrap() != "meta.toml" {
-                match entry_path.extension() {
-                    Some(e) => match e.to_str() {
-                        Some("md") => continue,
-                        _ => assets.push(entry_path.to_path_buf()),
-                    },
-                    None => assets.push(entry_path.to_path_buf()),
+            for entry in builder.into_iter().filter_map(std::result::Result::ok) {
+                let entry_path = entry.path();
+                if entry_path.is_file() && entry_path.file_name().unwrap() != "meta.toml" {
+                    match entry_path.extension() {
+                        Some(e) => match e.to_str() {
+                            Some("md") => continue,
+                            _ => assets.push(entry_path.to_path_buf()),
+                        },
+                        None => assets.push(entry_path.to_path_buf()),
+                    }
                 }
             }
-        }
+            assets
+        };
+
+
         for asset in assets {
             let relative_path = asset.strip_prefix(folder.path()).unwrap();
             let mut output_path = section_path.clone();
@@ -232,6 +237,13 @@ mod test {
             dir.push("ctf-test/example.md");
             dir
         };
+
+        let asset_dir = {
+            let mut dir = input_dir.path().to_path_buf();
+            dir.push("ctf-test/example_asset");
+            dir
+        };
+
         std::fs::create_dir_all(&ctf_dir)?;
         std::fs::write(
             &meta_dir,
@@ -244,6 +256,7 @@ name = \"example\"
 tags = [\"tag 1 lol\"]",
         );
         std::fs::write(&md_dir, "hi lol")?;
+        std::fs::write(&asset_dir, "????")?;
         process_folder(
             input_dir.path().as_os_str().to_string_lossy().as_ref(),
             output_dir.path().as_os_str().to_string_lossy().as_ref(),
@@ -263,6 +276,13 @@ tags = [\"tag 1 lol\"]",
             dir.push("ctf-test/index.md");
             std::fs::read_to_string(dir).unwrap()
         };
+
+        let ctf_asset_output = {
+            let mut dir = output_dir.path().to_path_buf();
+            dir.push("ctf-test/example_asset");
+            std::fs::read_to_string(dir).unwrap()
+        };
+
         assert!(std::fs::read_dir(output_dir.path())?.filter_map(|x| x.ok()).any(|x| x.file_name() == "ctf-test" ));
         assert_eq!(ctf_example_output, "+++
 title=\"example\"
@@ -286,6 +306,8 @@ tags = [\"ctf-writeups\"]
 
 # example
 hi lol");
+
+        assert_eq!(ctf_asset_output, "????");
 
         Ok(())
     }
