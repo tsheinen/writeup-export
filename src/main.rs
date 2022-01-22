@@ -1,4 +1,6 @@
 use color_eyre::eyre::Result;
+use path_dsl::path;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::format;
@@ -33,6 +35,9 @@ struct Opt {
     output_folder: String,
     #[structopt(short = "t", default_value = "zola")]
     r#type: OutputType,
+    #[structopt(short = "r")]
+    // matches URLs in markdown [](.*?) and adds prefix to the url
+    rewrite_url_prefix: Option<String>,
     #[structopt(short = "a")]
     author: Vec<String>,
 }
@@ -76,60 +81,73 @@ fn make_front_matter(
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    process_folder(
+    process_input_folder(
         &opt.input_folder,
         &opt.output_folder,
         opt.r#type,
         &opt.author,
+        opt.rewrite_url_prefix.as_ref(),
     )
 }
 
-fn process_folder(
+fn process_input_folder(
     input_folder: &str,
     output_folder: &str,
     output_type: OutputType,
     authors: &[impl AsRef<str>],
+    rewrite_url_prefix: Option<impl AsRef<str>>,
 ) -> Result<()> {
     for folder in std::fs::read_dir(input_folder)?
         .flatten()
         .filter(|x| x.file_type().unwrap().is_dir())
         .filter(|x| !x.file_name().to_string_lossy().contains(".git"))
     {
-        let meta_path = {
-            let mut folder_path = folder.path();
-            folder_path.push("meta.toml");
-            folder_path
-        };
+        let url_regex = Regex::new(r"\[(.*?)\]\(/(.*?)\)").unwrap();
+        let ctf_folder = folder.path();
 
-        let meta: CTFMeta = toml::from_str(&std::fs::read_to_string(meta_path)?)?;
-        let challenges = meta
+        let ctf_meta: CTFMeta =
+            toml::from_str(&std::fs::read_to_string(path!(&ctf_folder | "meta.toml"))?)?;
+
+        let challenges = ctf_meta
             .challenges
             .iter()
             .map(|(a, b)| ((b, a.clone()), a.clone() + ".md"))
-            .map(|(a, b)| {
-                let mut path = folder.path();
-                path.push(b);
-                (a, path)
-            })
+            .map(|(a, b)| (a, path!(&ctf_folder | b)))
             .flat_map(|(a, b)| Some((a, std::fs::read_to_string(b).ok()?)))
             .collect::<Vec<_>>();
 
-        let front_matter = make_front_matter(
-            &meta.name,
-            &meta.date,
-            &vec!["ctf-writeups".to_string()],
-            &authors,
-            output_type,
-        );
-        let description = meta.description.map(|desc| desc + "\n<!-- more -->\n");
+        let index_page = {
+            let index_front_matter = make_front_matter(
+                &ctf_meta.name,
+                &ctf_meta.date,
+                &vec!["ctf-writeups".to_string()],
+                &authors,
+                output_type,
+            );
+            let description = ctf_meta.description.map(|desc| desc + "\n<!-- more -->\n");
 
-        let section_page = front_matter
-            + &description.unwrap_or(String::new())
-            + &challenges
-                .iter()
-                .map(|((cmeta, _), b)| format!("# {}\n{}", cmeta.name, b.replace("\n#", "\n##")))
-                .collect::<Vec<_>>()
-                .join("\n");
+            index_front_matter
+                + &description.unwrap_or(String::new())
+                + &challenges
+                    .iter()
+                    // here we apply transformations on challenge files
+                    // 1. add level to each header
+                    .map(|((cmeta, _), b)| {
+                        format!("# {}\n{}", cmeta.name, b.replace("\n#", "\n##"))
+                    })
+                    // 2. if rewrite url prefix is specified, insert into all hrefs
+                    .map(|content| {
+                        if let Some(prefix) = &rewrite_url_prefix {
+                            url_regex
+                                .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
+                                .to_string()
+                        } else {
+                            content
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+        };
 
         let challenge_pages = challenges.into_iter().map(|((cmeta, name), content)| {
             (
@@ -138,35 +156,33 @@ fn process_folder(
                     "{}{}",
                     make_front_matter(
                         &cmeta.name,
-                        &meta.date,
+                        &ctf_meta.date,
                         &cmeta.tags.as_ref().unwrap_or(&vec![]),
                         authors.as_ref(),
                         output_type
                     ),
-                    content
+                    if let Some(prefix) = &rewrite_url_prefix {
+                        url_regex
+                            .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
+                            .to_string()
+                    } else {
+                        content
+                    }
                 ),
             )
         });
+
         let section_path = {
-            let mut section_path = PathBuf::new();
-            section_path.push(output_folder);
+            let mut section_path = PathBuf::from_str(output_folder).unwrap();
             section_path.push(folder.file_name().to_string_lossy().to_string());
             section_path
         };
         std::fs::create_dir(&section_path);
-        let index_path = {
-            let mut index_path = section_path.clone();
-            index_path.push("index.md");
-            index_path
-        };
-        std::fs::write(index_path, section_page)?;
+
+        std::fs::write(path!(&section_path | "index.md"), index_page)?;
         for ((_, name), content) in challenge_pages {
-            let chal_path = {
-                let mut chal_path = section_path.clone();
-                chal_path.push(format!("{}.md", name));
-                chal_path
-            };
-            std::fs::write(chal_path, content)?;
+            let chal_md_name = format!("{}.md", name);
+            std::fs::write(path!(&section_path | &chal_md_name), content)?;
         }
 
         let mut assets: Vec<PathBuf> = {
@@ -187,7 +203,6 @@ fn process_folder(
             }
             assets
         };
-
 
         for asset in assets {
             let relative_path = asset.strip_prefix(folder.path()).unwrap();
@@ -257,13 +272,13 @@ tags = [\"tag 1 lol\"]",
         );
         std::fs::write(&md_dir, "hi lol")?;
         std::fs::write(&asset_dir, "????")?;
-        process_folder(
+        process_input_folder(
             input_dir.path().as_os_str().to_string_lossy().as_ref(),
             output_dir.path().as_os_str().to_string_lossy().as_ref(),
             OutputType::Zola,
             &vec!["sky"],
+            None
         )?;
-
 
         let ctf_example_output = {
             let mut dir = output_dir.path().to_path_buf();
@@ -283,8 +298,12 @@ tags = [\"tag 1 lol\"]",
             std::fs::read_to_string(dir).unwrap()
         };
 
-        assert!(std::fs::read_dir(output_dir.path())?.filter_map(|x| x.ok()).any(|x| x.file_name() == "ctf-test" ));
-        assert_eq!(ctf_example_output, "+++
+        assert!(std::fs::read_dir(output_dir.path())?
+            .filter_map(|x| x.ok())
+            .any(|x| x.file_name() == "ctf-test"));
+        assert_eq!(
+            ctf_example_output,
+            "+++
 title=\"example\"
 date = 2022-01-07
 
@@ -293,9 +312,12 @@ tags = [\"tag 1 lol\"]
 +++
 
 
-hi lol");
+hi lol"
+        );
 
-        assert_eq!(ctf_index_output, "+++
+        assert_eq!(
+            ctf_index_output,
+            "+++
 title=\"test lol\"
 date = 2022-01-07
 
@@ -305,7 +327,8 @@ tags = [\"ctf-writeups\"]
 
 
 # example
-hi lol");
+hi lol"
+        );
 
         assert_eq!(ctf_asset_output, "????");
 
