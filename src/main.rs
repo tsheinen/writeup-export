@@ -114,6 +114,20 @@ fn process_input_folder(
             .map(|(a, b)| ((b, a.clone()), a.clone() + ".md"))
             .map(|(a, b)| (a, path!(&ctf_folder | b)))
             .flat_map(|(a, b)| Some((a, std::fs::read_to_string(b).ok()?)))
+            // here we apply transformations on challenge files
+            // 1. if rewrite url prefix is specified, insert into all hrefs
+            .map(|(a, content)| {
+                if let Some(prefix) = &rewrite_url_prefix {
+                    (
+                        a,
+                        url_regex
+                            .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
+                            .to_string(),
+                    )
+                } else {
+                    (a, content)
+                }
+            })
             .collect::<Vec<_>>();
 
         let index_page = {
@@ -130,20 +144,8 @@ fn process_input_folder(
                 + &description.unwrap_or(String::new())
                 + &challenges
                     .iter()
-                    // here we apply transformations on challenge files
-                    // 1. add level to each header
                     .map(|((cmeta, _), b)| {
                         format!("# {}\n{}", cmeta.name, b.replace("\n#", "\n##"))
-                    })
-                    // 2. if rewrite url prefix is specified, insert into all hrefs
-                    .map(|content| {
-                        if let Some(prefix) = &rewrite_url_prefix {
-                            url_regex
-                                .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
-                                .to_string()
-                        } else {
-                            content
-                        }
                     })
                     .collect::<Vec<_>>()
                     .join("\n")
@@ -161,13 +163,7 @@ fn process_input_folder(
                         authors.as_ref(),
                         output_type
                     ),
-                    if let Some(prefix) = &rewrite_url_prefix {
-                        url_regex
-                            .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
-                            .to_string()
-                    } else {
-                        content
-                    }
+                    content
                 ),
             )
         });
@@ -277,7 +273,7 @@ tags = [\"tag 1 lol\"]",
             output_dir.path().as_os_str().to_string_lossy().as_ref(),
             OutputType::Zola,
             &vec!["sky"],
-            None
+            None,
         )?;
 
         let ctf_example_output = {
