@@ -103,6 +103,7 @@ fn process_input_folder(
         .filter(|x| !x.file_name().to_string_lossy().contains(".git"))
     {
         let url_regex = Regex::new(r"\[(.*?)\]\(/(.*?)\)").unwrap();
+        let top_level_header_regex = Regex::new(r"(?m)^#([^#].*?)$").unwrap();
         let ctf_folder = folder.path();
 
         let ctf_meta: CTFMeta =
@@ -114,7 +115,7 @@ fn process_input_folder(
             .map(|(a, b)| ((b, a.clone()), a.clone() + ".md"))
             .map(|(a, b)| (a, path!(&ctf_folder | b)))
             .flat_map(|(a, b)| Some((a, std::fs::read_to_string(b).ok()?)))
-            // here we apply transformations on challenge files
+            // here we apply transformations on challenge files which should be present in both individual and collected pages
             // 1. if rewrite url prefix is specified, insert into all hrefs
             .map(|(a, content)| {
                 if let Some(prefix) = &rewrite_url_prefix {
@@ -144,8 +145,14 @@ fn process_input_folder(
                 + &description.unwrap_or(String::new())
                 + &challenges
                     .iter()
-                    .map(|((cmeta, _), b)| {
-                        format!("# {}\n{}", cmeta.name, b.replace("\n#", "\n##"))
+                    .map(|((cmeta, name), b)| {
+                        format!(
+                            "# [{}](/{}/{})\n{}",
+                            cmeta.name,
+                            folder.file_name().to_string_lossy(),
+                            slug::slugify(name),
+                            b.replace("\n#", "\n##")
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join("\n")
