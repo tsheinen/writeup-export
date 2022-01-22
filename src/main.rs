@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         &opt.output_folder,
         opt.r#type,
         &opt.author,
-        opt.rewrite_url_prefix.as_ref(),
+        opt.rewrite_url_prefix.as_ref().map(|x| x.as_str()),
     )
 }
 
@@ -95,7 +95,7 @@ fn process_input_folder(
     output_folder: &str,
     output_type: OutputType,
     authors: &[impl AsRef<str>],
-    rewrite_url_prefix: Option<impl AsRef<str>>,
+    rewrite_url_prefix: Option<&str>,
 ) -> Result<()> {
     for folder in std::fs::read_dir(input_folder)?
         .flatten()
@@ -122,7 +122,7 @@ fn process_input_folder(
                     (
                         a,
                         url_regex
-                            .replace_all(&content, &format!("[$1](/{}$2)", prefix.as_ref()))
+                            .replace_all(&content, &format!("[$1](/{}$2)", prefix))
                             .to_string(),
                     )
                 } else {
@@ -329,7 +329,7 @@ tags = [\"ctf-writeups\"]
 +++
 
 
-# example
+# [example](/ctf-test/example)
 hi lol"
         );
 
