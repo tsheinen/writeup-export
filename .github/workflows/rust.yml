@@ -17,8 +17,11 @@ jobs:
         run: cargo build --release --verbose
       - name: Test
         run: cargo test --release --verbose
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+      - uses: "marvinpinto/action-automatic-releases@latest"
         with:
-          name: writeup-export
-          path: target/release/writeup-export
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Development Build"
+          files: |
+            target/release/writeup-export
